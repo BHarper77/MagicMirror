@@ -28,6 +28,7 @@ Module.register("calendar", {
 		fade: true,
 		urgency: 7,
 		timeFormat: "relative",
+		showDaysUntil: false,
 		dateFormat: "MMM Do",
 		dateEndFormat: "LT",
 		fullDayEventDateFormat: "MMM Do",
@@ -409,6 +410,18 @@ Module.register("calendar", {
 				eventWrapper.appendChild(timeWrapper);
 			}
 
+			if (this.config.showDaysUntil && this.config.timeFormat !== "dateheaders") {
+				const daysWrapper = document.createElement("td");
+				const daysUntil = moment(event.startDate, "x").startOf("day").diff(moment().startOf("day"), "days");
+				let daysText;
+				if (daysUntil < 0) { daysText = ""; }
+				else if (daysUntil === 0) { daysText = this.translate("TODAY"); }
+				else if (daysUntil === 1) { daysText = "1 day"; }
+				else { daysText = daysUntil + " days"; }
+				daysWrapper.innerHTML = daysText;
+				daysWrapper.className = "days dimmed light";
+				eventWrapper.appendChild(daysWrapper);
+			}
 			wrapper.appendChild(eventWrapper);
 
 			// Create fade effect.
