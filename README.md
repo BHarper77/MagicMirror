@@ -57,13 +57,16 @@ pm2 set pm2-logrotate:retain 7
 pm2 set pm2-logrotate:compress true
 
 # Discord crash alerts (webhook URL is a secret — keep it off the repo)
+# NB: `log`/`error` forward the whole stdout/stderr *stream* (MM spews benign GL
+# warnings to stderr) — keep them OFF or Discord floods. Alert on events only.
 pm2 install pm2-discord
 pm2 set pm2-discord:discord_url <YOUR_WEBHOOK_URL>
 pm2 set pm2-discord:log false
-pm2 set pm2-discord:error true
-pm2 set pm2-discord:kill true
-pm2 set pm2-discord:restart true
-pm2 set pm2-discord:exception true
+pm2 set pm2-discord:error false
+pm2 set pm2-discord:restart true              # restarted (crash recovery)
+pm2 set pm2-discord:kill true                 # killed
+pm2 set pm2-discord:exception true            # uncaught crash
+pm2 set pm2-discord:restart_overlimit true    # hit max_restarts = mirror dead
 ```
 
 ## Turn the Pi on and off

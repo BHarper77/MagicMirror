@@ -40,10 +40,15 @@ a Node process manager, driven by a **checked-in `ecosystem.config.js`**.
 7. **Logs: explicit files under `~/.pm2/logs/`, rotated by `pm2-logrotate`**
    (`max_size 10M`, `retain 7`, `compress true`). Unrotated PM2 logs grow
    unbounded and would fill the SD card over months on a 24/7 box.
-8. **Crash alerting via `pm2-discord`** → Discord webhook, **events only**
-   (`error`/`restart`/`kill`/`exception` on, `log` off, so normal MM chatter
-   doesn't spam the channel). The webhook URL is a **secret**: set on the Pi with
-   `pm2 set pm2-discord:discord_url …`, **never committed** to the repo.
+8. **Crash alerting via `pm2-discord`** → Discord webhook, **process events
+   only**: `restart`/`kill`/`exception`/`restart_overlimit` on; `log` **and
+   `error` off**. Gotcha learned on install: `log`/`error` forward the whole
+   stdout/**stderr stream**, not "the process errored" — and MM continuously
+   writes benign GL warnings (`gbm_wrapper … dma_buf`, vsync) to stderr, so
+   `error: true` floods the channel. `restart_overlimit` is the key one: it
+   fires when `max_restarts` is exhausted, i.e. the mirror has gone black for
+   good. The webhook URL is a **secret**: set on the Pi with `pm2 set
+   pm2-discord:discord_url …`, **never committed** to the repo.
 
 ## Considered and rejected
 
