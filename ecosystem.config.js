@@ -1,19 +1,26 @@
 // PM2 process definition for the smart mirror. See docs/adr/0002-pm2-process-management.md.
 // Deploy on the Pi with:  pm2 start ecosystem.config.js
+//
+// Node is installed via nvm on the Pi, so the node path and PATH below are
+// hardcoded to the nvm version — systemd/PM2 at boot does NOT load nvm. If the
+// Pi's node version changes (`nvm install …`), update both paths here.
 module.exports = {
   apps: [
     {
       name: 'MagicMirror',
-      // Launch Electron directly (not `npm start`) so PM2 tracks the real GUI
-      // process — stop/restart then signal Electron cleanly, no npm wrapper.
+      cwd: '/home/admin/Documents/MagicMirror',
+      // Run electron's CLI launcher under node explicitly (node -> electron
+      // cli.js -> electron binary). Avoids relying on the `#!/usr/bin/env node`
+      // shebang finding nvm's node, which isn't on PATH at boot.
       script: 'node_modules/.bin/electron',
       args: 'js/electron.js',
-      interpreter: 'none',
-      cwd: '/home/admin/MagicMirror',
-      // MagicMirror is an Electron GUI: it must draw to the Pi's physical
-      // screen. Set explicitly so it works when systemd launches PM2 at boot.
+      interpreter: '/home/admin/.nvm/versions/node/v20.9.0/bin/node',
       env: {
+        // MagicMirror is an Electron GUI: it must draw to the Pi's physical
+        // screen. Set explicitly so it works when systemd launches PM2 at boot.
         DISPLAY: ':0',
+        // Put nvm's node/npm first so any child process finds them at boot.
+        PATH: '/home/admin/.nvm/versions/node/v20.9.0/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin',
       },
       // Crash policy: back off on repeated fast crashes (avoids SD/CPU thrash),
       // but a mirror that's been up >60s and glitches once resets the counter,

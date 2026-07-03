@@ -18,13 +18,19 @@ a Node process manager, driven by a **checked-in `ecosystem.config.js`**.
 2. **Run as the `admin` user** — the account that owns the desktop session and
    `DISPLAY=:0`. Avoids cross-user permission friction; a dedicated service user
    buys nothing on a single-purpose Pi.
-3. **Launch Electron directly** (`script: node_modules/.bin/electron`,
-   `args: js/electron.js`, `interpreter: none`) instead of `npm start`. This
-   gives PM2 the real GUI process, so `pm2 stop`/`restart` signal Electron
-   cleanly — no `npm` wrapper that can leave Electron lingering.
-4. **`env: { DISPLAY: ':0' }` explicit in the config**, not relying on the shell
-   default in `npm start`, so the app finds the screen when systemd launches PM2
-   at boot.
+3. **Launch via `node → electron cli.js → js/electron.js`** (`script:
+   node_modules/.bin/electron`, `args: js/electron.js`, `interpreter:` the nvm
+   node binary) instead of `npm start`. This gives PM2 the real process (no
+   `npm` wrapper that can leave Electron lingering) and runs Electron's launcher
+   under an explicit node path rather than trusting its `#!/usr/bin/env node`
+   shebang to resolve — node is **nvm-installed** and is *not* on the PATH
+   systemd gives PM2 at boot.
+4. **`env: { DISPLAY: ':0', PATH: <nvm-bin>:… }` explicit in the config.**
+   `DISPLAY` so the Electron GUI finds the physical screen; `PATH` with nvm's
+   node/npm bin prepended so any child process resolves node at boot. Both are
+   things `npm start`'s interactive shell provided and systemd does not.
+   Trade-off: the nvm node version (`v20.9.0`) is hardcoded in the paths — a
+   `nvm install` of a new node means updating `ecosystem.config.js`.
 5. **Crash policy: `exp_backoff_restart_delay: 200` + `max_restarts: 10` +
    `min_uptime: '60s'`.** Backoff ramps the retry delay on repeated fast crashes
    (no SD/CPU thrash). `min_uptime` resets the restart counter once MM has been

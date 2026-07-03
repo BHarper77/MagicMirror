@@ -13,7 +13,9 @@ SSH in over Tailscale (works from anywhere on the tailnet):
 ssh admin@raspberrypi
 ```
 
-The MagicMirror code lives in `~/MagicMirror` on the Pi.
+The MagicMirror code lives in `~/Documents/MagicMirror` on the Pi. Node is
+installed via [nvm](https://github.com/nvm-sh/nvm), so `node`/`npm`/`pm2` are
+only on the PATH of an interactive shell (they load from `~/.bashrc`).
 
 ## Run MagicMirror
 
@@ -41,8 +43,8 @@ it runs, edit `ecosystem.config.js`, then `pm2 restart ecosystem.config.js`.
 Only needed once (or after a fresh reflash). Run on the Pi as `admin`:
 
 ```sh
-sudo npm install -g pm2          # if pm2 isn't installed
-cd ~/MagicMirror
+npm install -g pm2               # if pm2 isn't installed (installs under nvm)
+cd ~/Documents/MagicMirror
 pkill -f electron || true        # stop any hand-started instance
 pm2 start ecosystem.config.js
 pm2 startup                      # prints a `sudo …` line — run that line
