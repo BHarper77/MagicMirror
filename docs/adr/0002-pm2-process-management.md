@@ -58,10 +58,20 @@ a Node process manager, driven by a **checked-in `ecosystem.config.js`**.
 - **Unlimited restarts** — self-heals forever, but a broken config boot-loops
   and hammers the SD card. Capped instead (decision 5).
 
-## To verify (when the Pi is back on)
+## Verified (2026-07-03, on install)
 
-- MM comes up cleanly **at boot** and does **not** exhaust `max_restarts`
-  waiting for X / `DISPLAY=:0` to be ready — the PM2 systemd service can start
-  before the graphical session. If the mirror is black after a reboot, make the
-  PM2 unit wait for the graphical target (or loosen the crash cap).
-- A test crash actually fires the Discord alert.
+- Set up live on the Pi: node v20.9.0 (nvm), repo at `~/Documents/MagicMirror`,
+  pm2 7.0.3, `pm2-admin` systemd unit **enabled + active**.
+- **Boot test passed:** a full `sudo reboot` auto-resurrected MagicMirror with
+  **`restarts=0`** and `Launching application` in the log — it did *not* exhaust
+  `max_restarts` waiting for X. The boot-timing risk did not materialise; no
+  graphical-target dependency needed.
+- Discord alert wired (webhook set on-Pi via `pm2 set`, not committed); a
+  `pm2 restart` fired the restart event. Confirm the message actually lands in
+  the channel.
+
+### Follow-ups (not blocking)
+
+- The Pi could not auth to GitHub over SSH (`Permission denied (publickey)`), so
+  its `origin` was switched to **HTTPS** — pulls work (public repo); pushes from
+  the Pi would need a key, but the Pi is a deploy target, not a dev box.
