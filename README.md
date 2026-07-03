@@ -1,56 +1,85 @@
-![MagicMirror²: The open source modular smart mirror platform. ](.github/header.png)
+# Smart Mirror
 
-<p style="text-align: center">
-  <a href="https://choosealicense.com/licenses/mit">
-		<img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
-	</a>
-	<img src="https://img.shields.io/github/workflow/status/michmich/magicmirror/Run%20Automated%20Tests" alt="GitHub Actions">
-	<img src="https://img.shields.io/github/checks-status/michmich/magicmirror/master" alt="Build Status">
-	<a href="https://codecov.io/gh/MichMich/MagicMirror">
-		<img src="https://codecov.io/gh/MichMich/MagicMirror/branch/master/graph/badge.svg?token=LEG1KitZR6" alt="CodeCov Status"/>
-	</a>
-	<a href="https://github.com/MichMich/MagicMirror">
-		<img src="https://img.shields.io/github/stars/michmich/magicmirror?style=social">
-	</a>
-</p>
+Wall-mounted smart mirror: an LG 25UM58-P monitor + Raspberry Pi 4B behind two-way
+glass, running [MagicMirror²](https://docs.magicmirror.builders). This repo is the
+source of truth for the whole project — software fork here, hardware/build decisions
+in [`docs/adr/`](docs/adr/), shared vocabulary in [`CONTEXT.md`](CONTEXT.md).
 
-**MagicMirror²** is an open source modular smart mirror platform. With a growing list of installable modules, the **MagicMirror²** allows you to convert your hallway or bathroom mirror into your personal assistant. **MagicMirror²** is built by the creator of [the original MagicMirror](https://michaelteeuw.nl/tagged/magicmirror) with the incredible help of a [growing community of contributors](https://github.com/MichMich/MagicMirror/graphs/contributors).
+## Access the Pi
 
-MagicMirror² focuses on a modular plugin system and uses [Electron](https://www.electronjs.org/) as an application wrapper. So no more web server or browser installs necessary!
+SSH in over Tailscale (works from anywhere on the tailnet):
 
-## Documentation
+```sh
+ssh admin@raspberrypi
+```
 
-For the full documentation including **[installation instructions](https://docs.magicmirror.builders/getting-started/installation.html)**, please visit our dedicated documentation website: [https://docs.magicmirror.builders](https://docs.magicmirror.builders).
+The MagicMirror code lives in `~/MagicMirror` on the Pi.
 
-## Links
+## Run MagicMirror
 
-- Website: [https://magicmirror.builders](https://magicmirror.builders)
-- Documentation: [https://docs.magicmirror.builders](https://docs.magicmirror.builders)
-- Forum: [https://forum.magicmirror.builders](https://forum.magicmirror.builders)
-  - Technical discussions: https://forum.magicmirror.builders/category/11/core-system
-- Discord: [https://discord.gg/J5BAtvx](https://discord.gg/J5BAtvx)
-- Blog: [https://michaelteeuw.nl/tagged/magicmirror](https://michaelteeuw.nl/tagged/magicmirror)
-- Donations: [https://magicmirror.builders/#donate](https://magicmirror.builders/#donate)
+MagicMirror is an Electron app that draws to the Pi's physical screen (`DISPLAY=:0`).
+It's managed by [PM2](https://pm2.keymetrics.io/), which auto-starts it on boot,
+restarts it if it crashes, and captures logs. The process definition lives in
+[`ecosystem.config.js`](ecosystem.config.js); see
+[ADR 0002](docs/adr/0002-pm2-process-management.md) for the reasoning.
 
-## Contributing Guidelines
+Day-to-day control (over SSH):
 
-Contributions of all kinds are welcome, not only in the form of code but also with regards to
+```sh
+pm2 status               # is the mirror running?
+pm2 restart MagicMirror  # e.g. after a config/module change
+pm2 stop MagicMirror     # stop it
+pm2 start MagicMirror    # start it again
+pm2 logs MagicMirror     # tail logs (Ctrl+C to exit the tail)
+```
 
-- bug reports
-- documentation
-- translations
+You normally never start it by hand — PM2 launches it on boot. To change *how*
+it runs, edit `ecosystem.config.js`, then `pm2 restart ecosystem.config.js`.
 
-For the full contribution guidelines, check out: [https://docs.magicmirror.builders/about/contributing.html](https://docs.magicmirror.builders/about/contributing.html)
+### First-time PM2 setup
 
-## Enjoying MagicMirror? Consider a donation!
+Only needed once (or after a fresh reflash). Run on the Pi as `admin`:
 
-MagicMirror² is opensource and free. That doesn't mean we don't need any money.
+```sh
+sudo npm install -g pm2          # if pm2 isn't installed
+cd ~/MagicMirror
+pkill -f electron || true        # stop any hand-started instance
+pm2 start ecosystem.config.js
+pm2 startup                      # prints a `sudo …` line — run that line
+pm2 save                         # persist the process list for boot
 
-Please consider a donation to help us cover the ongoing costs like webservers and email services.
-If we receive enough donations we might even be able to free up some working hours and spend some extra time improving the MagicMirror² core.
+# Log rotation (stops logs filling the SD card)
+pm2 install pm2-logrotate
+pm2 set pm2-logrotate:max_size 10M
+pm2 set pm2-logrotate:retain 7
+pm2 set pm2-logrotate:compress true
 
-To donate, please follow [this](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=G5D8E9MR5DTD2&source=url) link.
+# Discord crash alerts (webhook URL is a secret — keep it off the repo)
+pm2 install pm2-discord
+pm2 set pm2-discord:discord_url <YOUR_WEBHOOK_URL>
+pm2 set pm2-discord:log false
+pm2 set pm2-discord:error true
+pm2 set pm2-discord:kill true
+pm2 set pm2-discord:restart true
+pm2 set pm2-discord:exception true
+```
 
-<p style="text-align: center">
-	<a href="https://forum.magicmirror.builders/topic/728/magicmirror-is-voted-number-1-in-the-magpi-top-50"><img src="https://magicmirror.builders/img/magpi-best-watermark-custom.png" width="150" alt="MagPi Top 50"></a>
-</p>
+## Turn the Pi on and off
+
+The mirror runs 24/7 and has **no soft power button** — it powers on automatically
+when mains is applied. See [ADR 0001](docs/adr/0001-frame-depth-set-by-monitor.md).
+
+- **On:** apply power (plug it in). PM2 auto-starts MagicMirror on boot — nothing
+  to do by hand.
+- **Graceful shutdown / reboot** (over SSH):
+
+  ```sh
+  sudo shutdown -h now     # safe power-off, then pull mains
+  sudo reboot              # restart the Pi
+  ```
+
+- **Hard off:** pull the mains only as a last resort — risks SD-card corruption.
+
+---
+
+Upstream project docs: <https://docs.magicmirror.builders>
