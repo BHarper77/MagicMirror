@@ -1,0 +1,3 @@
+# Home WiFi outranks the phone hotspot on the Pi
+
+Working on the **Frame** happens away from the flat, where the Pi still needs a network — MagicMirror is useless offline. The Pi therefore keeps a saved hotspot profile (`Pixel Hotspot`) alongside home WiFi, but home is pinned to a **higher** autoconnect priority (10 vs 1): the hotspot is a fallback, not a preference, and a mirror that jumps networks because a phone hotspot came on at home is worse than one that never moves. The hotspot must be forced to **2.4GHz** on the phone — the Pi's `brcmfmac` radio has no 6GHz, so a 6GHz hotspot is not merely slow but *invisible*, indistinguishable from being switched off.
