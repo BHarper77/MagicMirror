@@ -150,11 +150,11 @@ nvm on PATH: use `~/.nvm/versions/node/v24.21.0/bin/node` and
 
 | Module | Position | Notes |
 |---|---|---|
-| calendar (Family) | top_left | `broadcastPastEvents: true` feeds CX3. URL secret |
-| MMM-CalendarExt3 | middle_center | 4-week grid. Has submodule: after `git pull` run `npm install --omit=dev` |
+| calendar (Family) | (none, hidden) | Data source only: `broadcastPastEvents: true` feeds CX3. URL secret |
+| MMM-CalendarExt3 | bottom_bar (above newsfeed) | 3-week grid, `two-line` events, `maxEventLines: 2`. Has submodule: after `git pull` run `npm install --omit=dev` |
 | compliments | lower_third | Birthdays only (blank otherwise). Messages in `config/compliments.json` (served as `/config/...`, reloaded hourly, no restart). Date keys are regex on `YYYY-MM-DD`, e.g. `"....-03-14"` |
-| MMM-MyScoreboard | bottom_center | NBA: NY, PHI |
-| MMM-Bring (rkorell) | bottom_right | List "Food shop". Hides itself when list empty. Creds Pi-only; email+password login only |
+| MMM-MyScoreboard | top_right (under weather) | NBA, all games (no `teams`). `maxHeight: 220` scrolls overflow |
+| MMM-Bring (rkorell) | top_left (under clock) | List "Food shop", `customTitle` header. Tiles restyled to 1-col text list in `custom.css`. Hides itself when list empty. Creds Pi-only; email+password login only |
 
 
 ### Pi unreachable, ping works
