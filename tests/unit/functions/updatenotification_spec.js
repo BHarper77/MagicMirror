@@ -1,139 +1,367 @@
-jest.mock("util", () => ({
-	...jest.requireActual("util"),
-	promisify: jest.fn()
-}));
+import { vi, describe, beforeEach, afterEach, it, expect } from "vitest";
 
-jest.mock("fs", () => ({
-	...jest.requireActual("fs"),
-	statSync: jest.fn()
-}));
+/**
+ * Creates a fresh GitHelper instance with isolated mocks for each test run.
+ * @param {{ current: import("vitest").Mock | null }} fsStatSyncMockRef reference to the mocked fs.statSync.
+ * @param {{ current: { error: import("vitest").Mock; info: import("vitest").Mock } | null }} loggerMockRef reference to logger stubs.
+ * @param {{ current: import("vitest").MockInstance | null }} execGitSpyRef reference to the execGit spy.
+ * @returns {Promise<unknown>} resolved GitHelper instance.
+ */
+const createGitHelper = async (fsStatSyncMockRef, loggerMockRef, execGitSpyRef) => {
+	vi.resetModules();
 
-jest.mock("logger", () => ({
-	...jest.requireActual("logger"),
-	error: jest.fn(),
-	info: jest.fn()
-}));
+	fsStatSyncMockRef.current = vi.fn();
+	loggerMockRef.current = { error: vi.fn(), info: vi.fn() };
 
-describe("Updatenotification", function () {
-	const execMock = jest.fn();
+	vi.doMock("node:fs", () => ({
+		statSync: fsStatSyncMockRef.current
+	}));
 
+	vi.doMock("logger", () => loggerMockRef.current);
+
+	const defaults = await import("../../../js/defaults");
+	const gitHelperModule = await import(`../../../${defaults.defaultModulesDir}/updatenotification/git_helper.js`);
+	const GitHelper = gitHelperModule.default || gitHelperModule;
+	const instance = new GitHelper();
+	execGitSpyRef.current = vi.spyOn(instance, "execGit");
+	instance.__loggerMock = loggerMockRef.current;
+	return instance;
+};
+
+describe("Updatenotification", () => {
+	const fsStatSyncMockRef = { current: null };
+	const loggerMockRef = { current: null };
+	const execGitSpyRef = { current: null };
 	let gitHelper;
 
 	let gitRemoteOut;
 	let gitRevParseOut;
 	let gitStatusOut;
 	let gitFetchOut;
+	let gitRevListCountOut;
 	let gitRevListOut;
-	let gitRemoteErr;
-	let gitRevParseErr;
-	let gitStatusErr;
 	let gitFetchErr;
-	let gitRevListErr;
+	let gitTagListOut;
 
-	beforeAll(async function () {
-		const { promisify } = require("util");
-		promisify.mockReturnValue(execMock);
+	const getExecutedCommands = () => execGitSpyRef.current.mock.calls.map((call) => call.slice(1).join(" "));
 
-		const GitHelper = require(`../../../modules/default/updatenotification/git_helper`);
-		gitHelper = new GitHelper();
-	});
+	beforeEach(async () => {
+		gitHelper = await createGitHelper(fsStatSyncMockRef, loggerMockRef, execGitSpyRef);
 
-	beforeEach(function () {
+		fsStatSyncMockRef.current.mockReturnValue({ isDirectory: () => true });
+
 		gitRemoteOut = "";
 		gitRevParseOut = "";
 		gitStatusOut = "";
 		gitFetchOut = "";
+		gitRevListCountOut = "";
 		gitRevListOut = "";
-		gitRemoteErr = "";
-		gitRevParseErr = "";
-		gitStatusErr = "";
 		gitFetchErr = "";
-		gitRevListErr = "";
+		gitTagListOut = "";
 
-		execMock.mockImplementation(function (command) {
-			if (command.includes("git remote -v")) {
-				return { stdout: gitRemoteOut, stderr: gitRemoteErr };
-			} else if (command.includes("git rev-parse HEAD")) {
-				return { stdout: gitRevParseOut, stderr: gitRevParseErr };
-			} else if (command.includes("git status -sb")) {
-				return { stdout: gitStatusOut, stderr: gitStatusErr };
-			} else if (command.includes("git fetch --dry-run")) {
-				return { stdout: gitFetchOut, stderr: gitFetchErr };
-			} else if (command.includes("git rev-list --ancestry-path --count")) {
-				return { stdout: gitRevListOut, stderr: gitRevListErr };
+		execGitSpyRef.current.mockImplementation((_folder, ...args) => {
+			const command = args.join(" ");
+
+			if (command === "remote -v") {
+				return Promise.resolve({ stdout: gitRemoteOut, stderr: "" });
 			}
+
+			if (command === "rev-parse HEAD") {
+				return Promise.resolve({ stdout: gitRevParseOut, stderr: "" });
+			}
+
+			if (command === "status -sb") {
+				return Promise.resolve({ stdout: gitStatusOut, stderr: "" });
+			}
+
+			if (command === "fetch -n --dry-run") {
+				return Promise.resolve({ stdout: gitFetchOut, stderr: gitFetchErr });
+			}
+
+			if (command.startsWith("rev-list --ancestry-path --count ")) {
+				return Promise.resolve({ stdout: gitRevListCountOut, stderr: "" });
+			}
+
+			if (command.startsWith("rev-list --ancestry-path ")) {
+				return Promise.resolve({ stdout: gitRevListOut, stderr: "" });
+			}
+
+			if (command === "ls-remote -q --tags --refs") {
+				return Promise.resolve({ stdout: gitTagListOut, stderr: "" });
+			}
+
+			return Promise.resolve({ stdout: "", stderr: "" });
+		});
+
+		if (gitHelper.execGit !== execGitSpyRef.current) {
+			throw new Error("execGit spy not applied");
+		}
+	});
+
+	afterEach(() => {
+		gitHelper.gitRepos = [];
+		vi.resetAllMocks();
+	});
+
+	describe("getRefDiffFromFetchDryRun", () => {
+		it("extracts only commit range from matching fetch line", () => {
+			const fetchOutput = "From github.com:MagicMirrorOrg/MagicMirror\n60e0377..332e429  develop          -> origin/develop\n";
+
+			expect(gitHelper.getRefDiffFromFetchDryRun(fetchOutput, "develop")).toBe("60e0377..332e429");
+		});
+
+		it("matches branch name exactly", () => {
+			const fetchOutput = "From github.com:MagicMirrorOrg/MagicMirror\n1111111..2222222  main-feature     -> origin/main-feature\n3333333..4444444  main             -> origin/main\n";
+
+			expect(gitHelper.getRefDiffFromFetchDryRun(fetchOutput, "main")).toBe("3333333..4444444");
+		});
+
+		it("returns fallback range when matching line is missing", () => {
+			const fetchOutput = "From github.com:MagicMirrorOrg/MagicMirror\n";
+
+			expect(gitHelper.getRefDiffFromFetchDryRun(fetchOutput, "develop")).toBe("develop..origin/develop");
 		});
 	});
 
-	afterEach(async function () {
-		gitHelper.gitRepos = [];
+	describe("MagicMirror on develop", () => {
+		const moduleName = "MagicMirror";
 
-		jest.clearAllMocks();
-	});
-
-	describe("default", () => {
-		const moduleName = "default";
-
-		beforeEach(async function () {
-			gitRemoteOut = "origin\tgit@github.com:MichMich/MagicMirror.git (fetch)\norigin\tgit@github.com:MichMich/MagicMirror.git (push)\n";
+		beforeEach(() => {
+			gitRemoteOut = "origin\tgit@github.com:MagicMirrorOrg/MagicMirror.git (fetch)\norigin\tgit@github.com:MagicMirrorOrg/MagicMirror.git (push)\n";
 			gitRevParseOut = "332e429a41f1a2339afd4f0ae96dd125da6beada";
 			gitStatusOut = "## develop...origin/develop\n M tests/unit/functions/updatenotification_spec.js\n";
-			gitFetchErr = "From github.com:MichMich/MagicMirror\n60e0377..332e429  develop          -> origin/develop\n";
-			gitRevListOut = "5";
+			gitFetchErr = "From github.com:MagicMirrorOrg/MagicMirror\n60e0377..332e429  develop          -> origin/develop\n";
+			gitRevListCountOut = "5";
 
-			await gitHelper.add(moduleName);
+			gitHelper.gitRepos = [{ module: moduleName, folder: "mock-path" }];
 		});
 
-		it("returns status information", async function () {
+		it("returns status information", async () => {
 			const repos = await gitHelper.getRepos();
 			expect(repos[0]).toMatchSnapshot();
-			expect(execMock).toHaveBeenCalledTimes(5);
+			expect(getExecutedCommands()).toMatchInlineSnapshot(`
+				[
+				  "rev-parse HEAD",
+				  "status -sb",
+				  "fetch -n --dry-run",
+				  "rev-list --ancestry-path --count 60e0377..332e429",
+				]
+			`);
 		});
 
-		it("returns status information early if isBehindInStatus", async function () {
+		it("returns status information early if isBehindInStatus", async () => {
 			gitStatusOut = "## develop...origin/develop [behind 5]";
 
 			const repos = await gitHelper.getRepos();
 			expect(repos[0]).toMatchSnapshot();
-			expect(execMock).toHaveBeenCalledTimes(3);
+			expect(getExecutedCommands()).toMatchInlineSnapshot(`
+				[
+				  "rev-parse HEAD",
+				  "status -sb",
+				]
+			`);
 		});
 
-		it("excludes repo if status can't be retrieved", async function () {
+		it("excludes repo if status can't be retrieved", async () => {
 			const errorMessage = "Failed to retrieve status";
-			execMock.mockRejectedValueOnce(errorMessage);
+			execGitSpyRef.current.mockImplementationOnce(() => Promise.reject(new Error(errorMessage)));
 
+			expect(gitHelper.gitRepos).toHaveLength(1);
 			const repos = await gitHelper.getRepos();
-			expect(repos.length).toBe(0);
+			expect(repos).toHaveLength(0);
+			expect(execGitSpyRef.current.mock.calls.length).toBeGreaterThan(0);
+		});
+	});
 
-			const { error } = require("logger");
-			expect(error).toHaveBeenCalledWith(`Failed to retrieve repo info for ${moduleName}: Failed to retrieve status`);
+	describe("MagicMirror on master (empty taglist)", () => {
+		const moduleName = "MagicMirror";
+
+		beforeEach(() => {
+			gitRemoteOut = "origin\tgit@github.com:MagicMirrorOrg/MagicMirror.git (fetch)\norigin\tgit@github.com:MagicMirrorOrg/MagicMirror.git (push)\n";
+			gitRevParseOut = "332e429a41f1a2339afd4f0ae96dd125da6beada";
+			gitStatusOut = "## master...origin/master\n M tests/unit/functions/updatenotification_spec.js\n";
+			gitFetchErr = "From github.com:MagicMirrorOrg/MagicMirror\n60e0377..332e429  master          -> origin/master\n";
+			gitRevListCountOut = "5";
+
+			gitHelper.gitRepos = [{ module: moduleName, folder: "mock-path" }];
 		});
 
-		it("excludes repo if refs don't match regex", async function () {
-			gitFetchErr = "";
+		it("returns status information", async () => {
+			const repos = await gitHelper.getRepos();
+			expect(repos[0]).toMatchSnapshot();
+			expect(getExecutedCommands()).toMatchInlineSnapshot(`
+				[
+				  "rev-parse HEAD",
+				  "status -sb",
+				  "fetch -n --dry-run",
+				  "rev-list --ancestry-path --count 60e0377..332e429",
+				  "ls-remote -q --tags --refs",
+				  "rev-list --ancestry-path 60e0377..332e429",
+				]
+			`);
+		});
+
+		it("returns status information early if isBehindInStatus", async () => {
+			gitStatusOut = "## master...origin/master [behind 5]";
 
 			const repos = await gitHelper.getRepos();
-			expect(repos.length).toBe(0);
+			expect(repos[0]).toMatchSnapshot();
+			expect(getExecutedCommands()).toMatchInlineSnapshot(`
+				[
+				  "rev-parse HEAD",
+				  "status -sb",
+				  "fetch -n --dry-run",
+				  "rev-list --ancestry-path --count 60e0377..332e429",
+				  "ls-remote -q --tags --refs",
+				  "rev-list --ancestry-path 60e0377..332e429",
+				]
+			`);
+		});
+
+		it("excludes repo if status can't be retrieved", async () => {
+			const errorMessage = "Failed to retrieve status";
+			execGitSpyRef.current.mockImplementationOnce(() => Promise.reject(new Error(errorMessage)));
+
+			const repos = await gitHelper.getRepos();
+			expect(repos).toHaveLength(0);
+		});
+	});
+
+	describe("MagicMirror on master with match in taglist", () => {
+		const moduleName = "MagicMirror";
+
+		beforeEach(() => {
+			gitRemoteOut = "origin\tgit@github.com:MagicMirrorOrg/MagicMirror.git (fetch)\norigin\tgit@github.com:MagicMirrorOrg/MagicMirror.git (push)\n";
+			gitRevParseOut = "332e429a41f1a2339afd4f0ae96dd125da6beada";
+			gitStatusOut = "## master...origin/master\n M tests/unit/functions/updatenotification_spec.js\n";
+			gitFetchErr = "From github.com:MagicMirrorOrg/MagicMirror\n60e0377..332e429  master          -> origin/master\n";
+			gitRevListCountOut = "5";
+			gitTagListOut = "332e429a41f1a2339afd4f0ae96dd125da6beada\ttag\n";
+			gitRevListOut = "332e429a41f1a2339afd4f0ae96dd125da6beada\n";
+
+			gitHelper.gitRepos = [{ module: moduleName, folder: "mock-path" }];
+		});
+
+		it("returns status information", async () => {
+			const repos = await gitHelper.getRepos();
+			expect(repos[0]).toMatchSnapshot();
+			expect(getExecutedCommands()).toMatchInlineSnapshot(`
+				[
+				  "rev-parse HEAD",
+				  "status -sb",
+				  "fetch -n --dry-run",
+				  "rev-list --ancestry-path --count 60e0377..332e429",
+				  "ls-remote -q --tags --refs",
+				  "rev-list --ancestry-path 60e0377..332e429",
+				]
+			`);
+		});
+
+		it("returns status information early if isBehindInStatus", async () => {
+			gitStatusOut = "## master...origin/master [behind 5]";
+
+			const repos = await gitHelper.getRepos();
+			expect(repos[0]).toMatchSnapshot();
+			expect(getExecutedCommands()).toMatchInlineSnapshot(`
+				[
+				  "rev-parse HEAD",
+				  "status -sb",
+				  "fetch -n --dry-run",
+				  "rev-list --ancestry-path --count 60e0377..332e429",
+				  "ls-remote -q --tags --refs",
+				  "rev-list --ancestry-path 60e0377..332e429",
+				]
+			`);
+		});
+
+		it("excludes repo if status can't be retrieved", async () => {
+			const errorMessage = "Failed to retrieve status";
+			execGitSpyRef.current.mockImplementationOnce(() => Promise.reject(new Error(errorMessage)));
+
+			const repos = await gitHelper.getRepos();
+			expect(repos).toHaveLength(0);
+		});
+	});
+
+	describe("MagicMirror on master without match in taglist", () => {
+		const moduleName = "MagicMirror";
+
+		beforeEach(() => {
+			gitRemoteOut = "origin\tgit@github.com:MagicMirrorOrg/MagicMirror.git (fetch)\norigin\tgit@github.com:MagicMirrorOrg/MagicMirror.git (push)\n";
+			gitRevParseOut = "332e429a41f1a2339afd4f0ae96dd125da6beada";
+			gitStatusOut = "## master...origin/master\n M tests/unit/functions/updatenotification_spec.js\n";
+			gitFetchErr = "From github.com:MagicMirrorOrg/MagicMirror\n60e0377..332e429  master          -> origin/master\n";
+			gitRevListCountOut = "5";
+			gitTagListOut = "xxxe429a41f1a2339afd4f0ae96dd125da6beada\ttag\n";
+			gitRevListOut = "332e429a41f1a2339afd4f0ae96dd125da6beada\n";
+
+			gitHelper.gitRepos = [{ module: moduleName, folder: "mock-path" }];
+		});
+
+		it("returns status information", async () => {
+			const repos = await gitHelper.getRepos();
+			expect(repos[0]).toMatchSnapshot();
+			expect(getExecutedCommands()).toMatchInlineSnapshot(`
+				[
+				  "rev-parse HEAD",
+				  "status -sb",
+				  "fetch -n --dry-run",
+				  "rev-list --ancestry-path --count 60e0377..332e429",
+				  "ls-remote -q --tags --refs",
+				  "rev-list --ancestry-path 60e0377..332e429",
+				]
+			`);
+		});
+
+		it("returns status information early if isBehindInStatus", async () => {
+			gitStatusOut = "## master...origin/master [behind 5]";
+
+			const repos = await gitHelper.getRepos();
+			expect(repos[0]).toMatchSnapshot();
+			expect(getExecutedCommands()).toMatchInlineSnapshot(`
+				[
+				  "rev-parse HEAD",
+				  "status -sb",
+				  "fetch -n --dry-run",
+				  "rev-list --ancestry-path --count 60e0377..332e429",
+				  "ls-remote -q --tags --refs",
+				  "rev-list --ancestry-path 60e0377..332e429",
+				]
+			`);
+		});
+
+		it("excludes repo if status can't be retrieved", async () => {
+			const errorMessage = "Failed to retrieve status";
+			execGitSpyRef.current.mockImplementationOnce(() => Promise.reject(new Error(errorMessage)));
+
+			const repos = await gitHelper.getRepos();
+			expect(repos).toHaveLength(0);
 		});
 	});
 
 	describe("custom module", () => {
 		const moduleName = "MMM-Fuel";
 
-		beforeEach(async function () {
+		beforeEach(() => {
 			gitRemoteOut = `origin\thttps://github.com/fewieden/${moduleName}.git (fetch)\norigin\thttps://github.com/fewieden/${moduleName}.git (push)\n`;
 			gitRevParseOut = "9d8310163da94441073a93cead711ba43e8888d0";
 			gitStatusOut = "## master...origin/master";
 			gitFetchErr = `From https://github.com/fewieden/${moduleName}\n19f7faf..9d83101  master      -> origin/master`;
-			gitRevListOut = "7";
+			gitRevListCountOut = "7";
 
-			await gitHelper.add(moduleName);
+			gitHelper.gitRepos = [{ module: moduleName, folder: "mock-path" }];
 		});
 
-		it("returns status information without hash", async function () {
+		it("returns status information without hash", async () => {
 			const repos = await gitHelper.getRepos();
 			expect(repos[0]).toMatchSnapshot();
-			expect(execMock).toHaveBeenCalledTimes(4);
+			expect(getExecutedCommands()).toMatchInlineSnapshot(`
+				[
+				  "status -sb",
+				  "fetch -n --dry-run",
+				  "rev-list --ancestry-path --count 19f7faf..9d83101",
+				]
+			`);
 		});
 	});
 });

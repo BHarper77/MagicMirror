@@ -1,9 +1,6 @@
-/* MagicMirror² Test config for display setters module using the helloworld module
- *
- * By Rejas
- * MIT Licensed.
- */
-let config = {
+const config = {
+	address: "0.0.0.0",
+	ipWhitelist: [],
 	modules: [
 		{
 			module: "helloworld",

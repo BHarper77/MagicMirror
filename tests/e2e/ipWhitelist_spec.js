@@ -1,36 +1,47 @@
-const fetch = require("fetch");
-const helpers = require("./global-setup");
+const helpers = require("./helpers/global-setup");
 
-describe("ipWhitelist directive configuration", function () {
-	describe("Set ipWhitelist without access", function () {
-		beforeAll(function () {
-			helpers.startApplication("tests/configs/noIpWhiteList.js");
+describe("ipWhitelist directive configuration", () => {
+	describe("When IP is not in whitelist", () => {
+		beforeAll(async () => {
+			await helpers.startApplication("tests/configs/noIpWhiteList.js");
 		});
-		afterAll(async function () {
+
+		afterAll(async () => {
 			await helpers.stopApplication();
 		});
 
-		it("should return 403", function (done) {
-			fetch("http://localhost:8080").then((res) => {
-				expect(res.status).toBe(403);
-				done();
-			});
+		it("should reject request with 403 (Forbidden)", async () => {
+			const port = global.testPort || 8080;
+			const res = await fetch(`http://localhost:${port}`);
+			expect(res.status).toBe(403);
+		});
+
+		it("should also reject Socket.IO handshake with 403 (Forbidden) — not just HTTP routes", async () => {
+			const port = global.testPort || 8080;
+			const res = await fetch(`http://localhost:${port}/socket.io/?EIO=4&transport=polling`);
+			expect(res.status).toBe(403);
 		});
 	});
 
-	describe("Set ipWhitelist []", function () {
-		beforeAll(function () {
-			helpers.startApplication("tests/configs/empty_ipWhiteList.js");
+	describe("When whitelist is empty (allow all IPs)", () => {
+		beforeAll(async () => {
+			await helpers.startApplication("tests/configs/empty_ipWhiteList.js");
 		});
-		afterAll(async function () {
+
+		afterAll(async () => {
 			await helpers.stopApplication();
 		});
 
-		it("should return 200", function (done) {
-			fetch("http://localhost:8080").then((res) => {
-				expect(res.status).toBe(200);
-				done();
-			});
+		it("should allow request with 200 (OK)", async () => {
+			const port = global.testPort || 8080;
+			const res = await fetch(`http://localhost:${port}`);
+			expect(res.status).toBe(200);
+		});
+
+		it("should also allow Socket.IO handshake with 200 (OK) — not just HTTP routes", async () => {
+			const port = global.testPort || 8080;
+			const res = await fetch(`http://localhost:${port}/socket.io/?EIO=4&transport=polling`);
+			expect(res.status).toBe(200);
 		});
 	});
 });

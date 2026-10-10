@@ -1,135 +1,156 @@
-/* MagicMirror²
- * The Core App (Server)
- *
- * By Michael Teeuw https://michaelteeuw.nl
- * MIT Licensed.
- */
+// Load lightweight internal alias resolver
+require("./alias-resolver");
 
-// Alias modules mentioned in package.js under _moduleAliases.
-require("module-alias/register");
-
-const fs = require("fs");
-const path = require("path");
+const fs = require("node:fs");
+const path = require("node:path");
+const Spawn = require("node:child_process").spawn;
 const Log = require("logger");
-const Server = require(`${__dirname}/server`);
-const Utils = require(`${__dirname}/utils`);
-const defaultModules = require(`${__dirname}/../modules/default/defaultmodules`);
-
-// Get version number.
-global.version = require(`${__dirname}/../package.json`).version;
-Log.log("Starting MagicMirror: v" + global.version);
 
 // global absolute root path
 global.root_path = path.resolve(`${__dirname}/../`);
 
-if (process.env.MM_CONFIG_FILE) {
-	global.configuration_file = process.env.MM_CONFIG_FILE;
-}
+// used to control fetch timeout for node_helpers
+const { setGlobalDispatcher, Agent } = require("undici");
 
-// FIXME: Hotfix Pull Request
-// https://github.com/MichMich/MagicMirror/pull/673
-if (process.env.MM_PORT) {
-	global.mmPort = process.env.MM_PORT;
+const Server = require("./server");
+const Utils = require("./utils");
+const { ConfigError } = require("./utils");
+
+const { getEnvVarsAsObj } = require("#server_functions");
+// common timeout value, provide environment override in case
+const fetch_timeout = process.env.mmFetchTimeout !== undefined ? process.env.mmFetchTimeout : 30000;
+
+// Get version number.
+global.version = require(`${global.root_path}/package.json`).version;
+global.mmTestMode = process.env.mmTestMode === "true";
+Log.log(`Starting MagicMirror: v${global.version}`);
+
+// Log system information in a subprocess so it is shown even on early startup failures.
+Spawn("node ./js/systeminformation.js", {
+	env: {
+		...process.env,
+		ELECTRON_VERSION: `${process.versions.electron}`,
+		USED_NODE_VERSION: `${process.versions.node}`
+	},
+	cwd: this.root_path,
+	shell: true,
+	detached: true,
+	stdio: "inherit"
+});
+
+if (process.env.MM_CONFIG_FILE) {
+	global.configuration_file = process.env.MM_CONFIG_FILE.replace(`${global.root_path}/`, "");
 }
 
 // The next part is here to prevent a major exception when there
 // is no internet connection. This could probable be solved better.
-process.on("uncaughtException", function (err) {
-	Log.error("Whoops! There was an uncaught exception...");
-	Log.error(err);
-	Log.error("MagicMirror² will not quit, but it might be a good idea to check why this happened. Maybe no internet connection?");
-	Log.error("If you think this really is an issue, please open an issue on GitHub: https://github.com/MichMich/MagicMirror/issues");
+process.on("uncaughtException", (err) => {
+	// ignore strange exceptions under aarch64 coming from systeminformation:
+	if (!err.stack.includes("node_modules/systeminformation")) {
+		Log.error("Whoops! There was an uncaught exception...");
+		Log.error(err);
+		Log.error("MagicMirror² will not quit, but it might be a good idea to check why this happened. Maybe no internet connection?");
+		Log.error("If you think this really is an issue, please open an issue on GitHub: https://github.com/MagicMirrorOrg/MagicMirror/issues");
+	}
 });
 
 /**
  * The core app.
- *
- * @class
  */
-function App() {
-	let nodeHelpers = [];
-	let httpServer;
+class App {
+	#nodeHelpers = [];
 
-	/**
-	 * Loads the config file. Combines it with the defaults, and runs the
-	 * callback with the found config as argument.
-	 *
-	 * @param {Function} callback Function to be called after loading the config
-	 */
-	function loadConfig(callback) {
-		Log.log("Loading config ...");
-		const defaults = require(`${__dirname}/defaults`);
+	#httpServer;
 
-		// For this check proposed to TestSuite
-		// https://forum.magicmirror.builders/topic/1456/test-suite-for-magicmirror/8
-		const configFilename = path.resolve(global.configuration_file || `${global.root_path}/config/config.js`);
+	#defaultModules;
 
-		try {
-			fs.accessSync(configFilename, fs.F_OK);
-			const c = require(configFilename);
-			checkDeprecatedOptions(c);
-			const config = Object.assign(defaults, c);
-			callback(config);
-		} catch (e) {
-			if (e.code === "ENOENT") {
-				Log.error(Utils.colors.error("WARNING! Could not find config file. Please create one. Starting with default configuration."));
-			} else if (e instanceof ReferenceError || e instanceof SyntaxError) {
-				Log.error(Utils.colors.error(`WARNING! Could not validate config file. Starting with default configuration. Please correct syntax errors at or above this line: ${e.stack}`));
-			} else {
-				Log.error(Utils.colors.error(`WARNING! Could not load config file. Starting with default configuration. Error found: ${e}`));
-			}
-			callback(defaults);
-		}
-	}
+	#env;
 
-	/**
-	 * Checks the config for deprecated options and throws a warning in the logs
-	 * if it encounters one option from the deprecated.js list
-	 *
-	 * @param {object} userConfig The user config
-	 */
-	function checkDeprecatedOptions(userConfig) {
-		const deprecated = require(`${global.root_path}/js/deprecated`);
-		const deprecatedOptions = deprecated.configs;
+	constructor () {
 
-		const usedDeprecated = deprecatedOptions.filter((option) => userConfig.hasOwnProperty(option));
-		if (usedDeprecated.length > 0) {
-			Log.warn(Utils.colors.warn(`WARNING! Your config is using deprecated options: ${usedDeprecated.join(", ")}. Check README and CHANGELOG for more up-to-date ways of getting the same functionality.`));
-		}
+		/*
+		 * Listen for SIGINT signal and call stop() function.
+		 *
+		 * Added to fix #1056
+		 * Note: this is only used if running `server-only`. Otherwise
+		 * this.stop() is called by app.on("before-quit"... in `electron.js`
+		 */
+		process.on("SIGINT", async () => {
+			Log.log("[SIGINT] Received. Shutting down server...");
+			setTimeout(() => {
+				process.exit(0);
+			}, 3000); // Force quit after 3 seconds
+			await this.stop();
+			process.exit(0);
+		});
+
+		/*
+		 * Listen to SIGTERM signals so we can stop everything when we
+		 * are asked to stop by the OS.
+		 */
+		process.on("SIGTERM", async () => {
+			Log.log("[SIGTERM] Received. Shutting down server...");
+			setTimeout(() => {
+				process.exit(0);
+			}, 3000); // Force quit after 3 seconds
+			await this.stop();
+			process.exit(0);
+		});
 	}
 
 	/**
 	 * Loads a specific module.
-	 *
 	 * @param {string} module The name of the module (including subpath).
-	 * @param {Function} callback Function to be called after loading
 	 */
-	function loadModule(module, callback) {
+	#loadModule (module) {
 		const elements = module.split("/");
 		const moduleName = elements[elements.length - 1];
-		let moduleFolder = `${__dirname}/../modules/${module}`;
+		let moduleFolder = path.resolve(`${global.root_path}/${this.#env.modulesDir}`, module);
 
-		if (defaultModules.includes(moduleName)) {
-			moduleFolder = `${__dirname}/../modules/default/${module}`;
+		if (this.#defaultModules.includes(moduleName)) {
+			const defaultModuleFolder = path.resolve(`${global.root_path}/${global.defaultModulesDir}/`, module);
+			if (!global.mmTestMode) {
+				moduleFolder = defaultModuleFolder;
+			} else {
+				// running in test mode, allow defaultModules placed under moduleDir for testing
+				if (this.#env.modulesDir === "modules" || this.#env.modulesDir === "tests/mocks") {
+					moduleFolder = defaultModuleFolder;
+				}
+			}
+		}
+
+		const moduleFile = `${moduleFolder}/${moduleName}.js`;
+
+		try {
+			fs.accessSync(moduleFile, fs.constants.R_OK);
+		} catch {
+			Log.warn(`No ${moduleFile} found for module: ${moduleName}.`);
 		}
 
 		const helperPath = `${moduleFolder}/node_helper.js`;
 
 		let loadHelper = true;
 		try {
-			fs.accessSync(helperPath, fs.R_OK);
-		} catch (e) {
+			fs.accessSync(helperPath, fs.constants.R_OK);
+		} catch {
 			loadHelper = false;
 			Log.log(`No helper found for module: ${moduleName}.`);
 		}
 
+		// if the helper was found
 		if (loadHelper) {
-			const Module = require(helperPath);
-			let m = new Module();
+			let Module;
+			try {
+				Module = require(helperPath);
+			} catch (e) {
+				Log.error(`Error when loading ${moduleName}:`, e.message);
+				return;
+			}
+			const m = new Module();
 
 			if (m.requiresVersion) {
 				Log.log(`Check MagicMirror² version for node helper '${moduleName}' - Minimum version: ${m.requiresVersion} - Current version: ${global.version}`);
-				if (cmpVersions(global.version, m.requiresVersion) >= 0) {
+				if (this.#cmpVersions(global.version, m.requiresVersion) >= 0) {
 					Log.log("Version is ok!");
 				} else {
 					Log.warn(`Version is incorrect. Skip module: '${moduleName}'`);
@@ -139,52 +160,35 @@ function App() {
 
 			m.setName(moduleName);
 			m.setPath(path.resolve(moduleFolder));
-			nodeHelpers.push(m);
+			this.#nodeHelpers.push(m);
 
-			m.loaded(callback);
-		} else {
-			callback();
+			m.loaded();
 		}
 	}
 
 	/**
 	 * Loads all modules.
-	 *
 	 * @param {Module[]} modules All modules to be loaded
-	 * @param {Function} callback Function to be called after loading
+	 * @returns {Promise} A promise that is resolved when all modules been loaded
 	 */
-	function loadModules(modules, callback) {
+	async #loadModules (modules) {
 		Log.log("Loading module helpers ...");
 
-		/**
-		 *
-		 */
-		function loadNextModule() {
-			if (modules.length > 0) {
-				const nextModule = modules[0];
-				loadModule(nextModule, function () {
-					modules = modules.slice(1);
-					loadNextModule();
-				});
-			} else {
-				// All modules are loaded
-				Log.log("All module helpers loaded.");
-				callback();
-			}
+		for (const module of modules) {
+			await this.#loadModule(module);
 		}
 
-		loadNextModule();
+		Log.log("All module helpers loaded.");
 	}
 
 	/**
 	 * Compare two semantic version numbers and return the difference.
-	 *
 	 * @param {string} a Version number a.
 	 * @param {string} b Version number b.
 	 * @returns {number} A positive number if a is larger than b, a negative
 	 * number if a is smaller and 0 if they are the same
 	 */
-	function cmpVersions(a, b) {
+	#cmpVersions (a, b) {
 		let i, diff;
 		const regExStrip0 = /(\.0+)+$/;
 		const segmentsA = a.replace(regExStrip0, "").split(".");
@@ -203,88 +207,142 @@ function App() {
 	/**
 	 * Start the core app.
 	 *
-	 * It loads the config, then it loads all modules. When it's done it
-	 * executes the callback with the config as argument.
-	 *
-	 * @param {Function} callback Function to be called after start
+	 * It loads the config, then it loads all modules.
+	 * @async
+	 * @returns {Promise<object>} the config used
 	 */
-	this.start = function (callback) {
-		loadConfig(function (c) {
-			config = c;
+	async start () {
+		try {
+			const configObj = Utils.loadConfig();
+			global.config = configObj.fullConf;
+			// Keep a copy of the redacted config to later verify module secret permissions
+			global.configRedacted = configObj.redactedConf;
+			const config = global.config;
+			Utils.checkConfigFile(configObj);
+
+			global.defaultModulesDir = config.defaultModulesDir;
+			this.#defaultModules = require(`${global.root_path}/${global.defaultModulesDir}/defaultmodules`);
 
 			Log.setLogLevel(config.logLevel);
 
-			let modules = [];
-
-			for (const module of config.modules) {
-				if (!modules.includes(module.module) && !module.disabled) {
-					modules.push(module.module);
+			this.#env = getEnvVarsAsObj();
+			// check for deprecated css/custom.css and move it to new location
+			if ((!fs.existsSync(`${global.root_path}/${this.#env.customCss}`)) && (fs.existsSync(`${global.root_path}/css/custom.css`))) {
+				try {
+					fs.renameSync(`${global.root_path}/css/custom.css`, `${global.root_path}/${this.#env.customCss}`);
+					Log.warn(`WARNING! Your custom css file was moved from ${global.root_path}/css/custom.css to ${global.root_path}/${this.#env.customCss}`);
+				} catch {
+					Log.warn("WARNING! Your custom css file is currently located in the css folder. Please move it to the config folder!");
 				}
 			}
 
-			loadModules(modules, function () {
-				httpServer = new Server(config, function (app, io) {
-					Log.log("Server started ...");
+			// get the used module positions
+			Utils.getModulePositions();
 
-					for (let nodeHelper of nodeHelpers) {
-						nodeHelper.setExpressApp(app);
-						nodeHelper.setSocketIO(io);
-						nodeHelper.start();
+			const modules = [];
+			for (const module of config.modules) {
+				if (module.disabled) continue;
+				if (module.module) {
+					if (Utils.moduleHasValidPosition(module.position) || typeof (module.position) === "undefined") {
+						// Only add this module to be loaded if it is not a duplicate (repeated instance of the same module)
+						if (!modules.includes(module.module)) {
+							modules.push(module.module);
+						}
+					} else {
+						Log.warn("Invalid module position found for this configuration:" + `\n${JSON.stringify(module, null, 2)}`);
 					}
+				} else {
+					Log.warn("No module name found for this configuration:" + `\n${JSON.stringify(module, null, 2)}`);
+				}
+			}
 
-					Log.log("Sockets connected & modules started ...");
+			setGlobalDispatcher(new Agent({ connect: { timeout: fetch_timeout } }));
 
-					if (typeof callback === "function") {
-						callback(config);
-					}
-				});
+			await this.#loadModules(modules);
+
+			this.#httpServer = new Server(configObj);
+			const { app, io } = await this.#httpServer.open();
+			Log.log("Server started ...");
+
+			const nodePromises = [];
+			for (const nodeHelper of this.#nodeHelpers) {
+				nodeHelper.setExpressApp(app);
+				nodeHelper.setSocketIO(io);
+
+				try {
+					nodePromises.push(nodeHelper.start());
+				} catch (error) {
+					Log.error(`Error when starting node_helper for module ${nodeHelper.name}:`);
+					Log.error(error);
+				}
+			}
+
+			const results = await Promise.allSettled(nodePromises);
+
+			// Log errors that happened during async node_helper startup
+			results.forEach((result) => {
+				if (result.status === "rejected") {
+					Log.error(result.reason);
+				}
 			});
-		});
-	};
+
+			Log.log("Sockets connected & modules started ...");
+
+			return global.config;
+		} catch (error) {
+			if (error instanceof ConfigError) {
+				Log.error(error.message);
+			} else {
+				Log.error("Unexpected error during startup:", error);
+			}
+
+			const int32 = new Int32Array(new SharedArrayBuffer(4));
+			// wait 1000ms before exiting so that child processes (e.g. systeminformation) have some additional time
+			Atomics.wait(int32, 0, 0, 1000);
+			process.exit(1);
+		}
+	}
 
 	/**
 	 * Stops the core app. This calls each node_helper's STOP() function, if it
 	 * exists.
 	 *
 	 * Added to fix #1056
+	 * @returns {Promise} A promise that is resolved when all node_helpers and
+	 * the http server has been closed
 	 */
-	this.stop = function () {
-		for (const nodeHelper of nodeHelpers) {
-			if (typeof nodeHelper.stop === "function") {
-				nodeHelper.stop();
+	async stop () {
+		const nodePromises = [];
+		for (const nodeHelper of this.#nodeHelpers) {
+			try {
+				if (typeof nodeHelper.stop === "function") {
+					nodePromises.push(nodeHelper.stop());
+				}
+			} catch (error) {
+				Log.error(`Error when stopping node_helper for module ${nodeHelper.name}:`);
+				Log.error(error);
 			}
 		}
-		httpServer.close();
-	};
 
-	/**
-	 * Listen for SIGINT signal and call stop() function.
-	 *
-	 * Added to fix #1056
-	 * Note: this is only used if running `server-only`. Otherwise
-	 * this.stop() is called by app.on("before-quit"... in `electron.js`
-	 */
-	process.on("SIGINT", () => {
-		Log.log("[SIGINT] Received. Shutting down server...");
-		setTimeout(() => {
-			process.exit(0);
-		}, 3000); // Force quit after 3 seconds
-		this.stop();
-		process.exit(0);
-	});
+		const results = await Promise.allSettled(nodePromises);
 
-	/**
-	 * Listen to SIGTERM signals so we can stop everything when we
-	 * are asked to stop by the OS.
-	 */
-	process.on("SIGTERM", () => {
-		Log.log("[SIGTERM] Received. Shutting down server...");
-		setTimeout(() => {
-			process.exit(0);
-		}, 3000); // Force quit after 3 seconds
-		this.stop();
-		process.exit(0);
-	});
+		// Log errors that happened during async node_helper stopping
+		results.forEach((result) => {
+			if (result.status === "rejected") {
+				Log.error(result.reason);
+			}
+		});
+
+		Log.log("Node_helpers stopped ...");
+
+		// To be able to stop the app even if it hasn't been started (when
+		// running with Electron against another server)
+		if (!this.#httpServer) {
+			return Promise.resolve();
+		}
+
+		return this.#httpServer.close();
+	}
 }
 
 module.exports = new App();

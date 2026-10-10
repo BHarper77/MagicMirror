@@ -1,9 +1,6 @@
-/* MagicMirror² Test config current weather compliments
- *
- * By rejas https://github.com/rejas
- * MIT Licensed.
- */
-let config = {
+const config = {
+	address: "0.0.0.0",
+	ipWhitelist: [],
 	modules: [
 		{
 			module: "compliments",
@@ -19,8 +16,10 @@ let config = {
 			module: "weather",
 			position: "bottom_bar",
 			config: {
-				location: "Munich",
-				mockData: '"#####WEATHERDATA#####"'
+				lat: 48.14,
+				lon: 11.58,
+				weatherProvider: "openweathermap",
+				apiKey: "test-api-key"
 			}
 		}
 	]

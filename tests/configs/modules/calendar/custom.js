@@ -1,9 +1,6 @@
-/* MagicMirror² Test config custom calendar
- *
- * By Rejas
- * MIT Licensed.
- */
-let config = {
+const config = {
+	address: "0.0.0.0",
+	ipWhitelist: [],
 	timeFormat: 12,
 
 	modules: [
@@ -11,14 +8,18 @@ let config = {
 			module: "calendar",
 			position: "bottom_bar",
 			config: {
+				customEvents: [{ keyword: "CustomEvent", symbol: "dice", eventClass: "undo" }],
+				forceUseCurrentTime: true,
 				calendars: [
 					{
-						maximumEntries: 4,
+						maximumEntries: 5,
+						pastDaysCount: 5,
+						broadcastPastEvents: true,
 						maximumNumberOfDays: 10000,
 						symbol: "birthday-cake",
 						fullDaySymbol: "calendar-day",
 						recurringSymbol: "undo",
-						url: "http://localhost:8080/tests/configs/data/calendar_test_icons.ics"
+						url: "http://localhost:8080/tests/mocks/calendar_test_icons.ics"
 					}
 				]
 			}

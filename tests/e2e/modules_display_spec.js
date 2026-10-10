@@ -1,28 +1,25 @@
-const helpers = require("./global-setup");
+const { expect } = require("playwright/test");
+const helpers = require("./helpers/global-setup");
 
 describe("Display of modules", () => {
-	beforeAll(function (done) {
-		helpers.startApplication("tests/configs/modules/display.js");
-		helpers.getDocument(done);
+	let page;
+
+	beforeAll(async () => {
+		await helpers.startApplication("tests/configs/modules/display.js");
+		await helpers.getDocument();
+		page = helpers.getPage();
 	});
+
 	afterAll(async () => {
 		await helpers.stopApplication();
 	});
 
-	it("should show the test header", (done) => {
-		helpers.waitForElement("#module_0_helloworld .module-header").then((elem) => {
-			done();
-			expect(elem).not.toBe(null);
-			// textContent gibt hier lowercase zurück, das uppercase wird durch css realisiert, was daher nicht in textContent landet
-			expect(elem.textContent).toBe("test_header");
-		});
+	it("should show the test header", async () => {
+		// textContent returns lowercase here, the uppercase is realized by CSS, which therefore does not end up in textContent
+		await expect(page.locator("#module_0_helloworld .module-header")).toHaveText("test_header");
 	});
 
-	it("should show no header if no header text is specified", (done) => {
-		helpers.waitForElement("#module_1_helloworld .module-header").then((elem) => {
-			done();
-			expect(elem).not.toBe(null);
-			expect(elem.textContent).toBe("undefined");
-		});
+	it("should show no header if no header text is specified", async () => {
+		await expect(page.locator("#module_1_helloworld .module-header")).toHaveText("undefined");
 	});
 });
