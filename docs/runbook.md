@@ -152,11 +152,10 @@ nvm on PATH: use `~/.nvm/versions/node/v24.21.0/bin/node` and
 |---|---|---|
 | calendar (Family) | top_left | `broadcastPastEvents: true` feeds CX3. URL secret |
 | MMM-CalendarExt3 | middle_center | 4-week grid. Has submodule: after `git pull` run `npm install --omit=dev` |
-| compliments | lower_third | Messages in `config/compliments.json` (served as `/config/...`, reloaded hourly, no restart). Date keys are regex on `YYYY-MM-DD`, e.g. `"....-03-14"` |
+| compliments | lower_third | Birthdays only (blank otherwise). Messages in `config/compliments.json` (served as `/config/...`, reloaded hourly, no restart). Date keys are regex on `YYYY-MM-DD`, e.g. `"....-03-14"` |
 | MMM-MyScoreboard | bottom_center | NBA: NY, PHI |
 | MMM-Bring (rkorell) | bottom_right | `disabled: true` until creds. Email+password login only |
 
-Weather-based compliments need a weather instance with `type: "current"`; current one is `daily`.
 
 ### Pi unreachable, ping works
 
