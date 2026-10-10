@@ -142,6 +142,28 @@ cd ~/Documents/MagicMirror && pm2 delete MagicMirror && pm2 start ecosystem.conf
 
 The 2.21 `ecosystem.config.js` in that copy points at node v20.9.0, which is still installed.
 
+## Modules in use
+
+Config is Pi-only (`config/config.js`, gitignored). Non-interactive ssh has no
+nvm on PATH: use `~/.nvm/versions/node/v24.21.0/bin/node` and
+`~/.nvm/versions/node/v20.9.0/bin/pm2`, or `. ~/.nvm/nvm.sh` first.
+
+| Module | Position | Notes |
+|---|---|---|
+| calendar (Family) | top_left | `broadcastPastEvents: true` feeds CX3. URL secret |
+| MMM-CalendarExt3 | middle_center | 4-week grid. Has submodule: after `git pull` run `npm install --omit=dev` |
+| compliments | lower_third | Messages in `config/compliments.json` (served as `/config/...`, reloaded hourly, no restart). Date keys are regex on `YYYY-MM-DD`, e.g. `"....-03-14"` |
+| MMM-MyScoreboard | bottom_center | NBA: NY, PHI |
+| MMM-Bring (rkorell) | bottom_right | `disabled: true` until creds. Email+password login only |
+
+Weather-based compliments need a weather instance with `type: "current"`; current one is `daily`.
+
+### Pi unreachable, ping works
+
+SSH times out at banner exchange. Seen 2026-10-10: `journalctl -k -b -1` showed
+`kworker ... blocked for more than 120 seconds` in `mmc_rescan`, i.e. SD card I/O
+stall (not OOM). Power-cycle. If it recurs, replace the SD card.
+
 ## WiFi
 
 Two profiles on `wlan0`: `Hyperoptic Fibre 2B43` (autoconnect priority **10**)
