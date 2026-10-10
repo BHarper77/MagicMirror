@@ -28,6 +28,46 @@ The repo on the Pi is at `~/Documents/MagicMirror` (not `~/MagicMirror`), and
 its `origin` is HTTPS — pull-only. MagicMirror runs under pm2; see
 `docs/adr/0002`.
 
+### `tailscale` command not found
+
+Node shows online in the Tailscale dashboard but `tailscale` isn't a recognised
+command: the daemon (`tailscaled`) is running, but the CLI binary isn't on the
+current shell's `PATH` — usually because you're on a minimal console login where
+`/usr/sbin` isn't in `PATH`, or the shell hasn't picked up a newly installed
+binary.
+
+```sh
+which tailscale
+ls -l /usr/bin/tailscale /usr/sbin/tailscale
+find / -name tailscale -type f 2>/dev/null
+
+sudo tailscale status            # sudo resets PATH to include sbin — usually works
+/usr/bin/tailscale status        # or call it by full path
+hash -r                          # if the binary exists but the shell can't see it
+sudo systemctl status tailscaled # confirm the daemon is up
+
+curl -fsSL https://tailscale.com/install.sh | sh   # if only tailscaled installed, not the CLI
+```
+
+For Tailscale SSH specifically the Pi needs `sudo tailscale up --ssh` and the
+tailnet ACL must permit it.
+
+## Closing the MagicMirror display at the Pi
+
+With a keyboard/mouse plugged into the Pi (e.g. when SSH is down):
+
+- `Ctrl`+`Q` — MagicMirror's built-in quit binding
+- `Alt`+`F4` — closes the Electron window
+- `Ctrl`+`Alt`+`F2` (F1–F6) — drop to a text console; log in and stop it there.
+  Return to the display with `Ctrl`+`Alt`+`F1` (or F7).
+
+```sh
+export NVM_DIR=$HOME/.nvm; . $NVM_DIR/nvm.sh
+pm2 list
+pm2 stop MagicMirror        # pm2 restarts it on boot / on crash — stop, don't kill
+pkill -f electron           # last resort; pm2 will respawn it unless stopped first
+```
+
 ## WiFi
 
 Two profiles on `wlan0`: `Hyperoptic Fibre 2B43` (autoconnect priority **10**)
