@@ -52,6 +52,26 @@ curl -fsSL https://tailscale.com/install.sh | sh   # if only tailscaled installe
 For Tailscale SSH specifically the Pi needs `sudo tailscale up --ssh` and the
 tailnet ACL must permit it.
 
+### Tailnet SSH/ping fails but `tailscale ping` works
+
+All tailnet policy lives in the homelab repo (`tailnet/policy.hujson`), and the
+GitOps apply overwrites anything edited in the admin console. When you change
+access, change it in the repo.
+
+**SSH/ping to 100.x times out.** On the Pi (over LAN, `ssh -o
+HostKeyAlias=raspberrypi admin@192.168.1.157`), `journalctl -u tailscaled |
+grep Drop` shows `Drop: TCP{… > 100.84.111.98:22} no rules matched`, and
+`sudo tailscale debug netmap` has an empty `PacketFilter`. The cause was that
+the policy grants only covered tagged nodes, and the Pi is untagged. Fixed by
+the member→`autogroup:self` grant in homelab #109.
+
+**`tailscale: tailnet policy does not permit you to SSH to this node`.** The Pi
+runs Tailscale SSH (`RunSSH: true`), so tailscaled intercepts port 22 on the
+tailnet, plain `ssh` included. `debug netmap` showed `SSHPolicy.rules: []`
+because the GitOps apply had wiped the console-only ssh rule. Fixed by the
+`ssh` block in `policy.hujson` (accept, member → self, users `autogroup:nonroot`
+and `admin`), homelab #110.
+
 ## Closing the MagicMirror display at the Pi
 
 With a keyboard/mouse plugged into the Pi (e.g. when SSH is down):
