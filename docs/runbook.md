@@ -154,7 +154,7 @@ nvm on PATH: use `~/.nvm/versions/node/v24.21.0/bin/node` and
 | MMM-CalendarExt3 | middle_center | 4-week grid. Has submodule: after `git pull` run `npm install --omit=dev` |
 | compliments | lower_third | Birthdays only (blank otherwise). Messages in `config/compliments.json` (served as `/config/...`, reloaded hourly, no restart). Date keys are regex on `YYYY-MM-DD`, e.g. `"....-03-14"` |
 | MMM-MyScoreboard | bottom_center | NBA: NY, PHI |
-| MMM-Bring (rkorell) | bottom_right | `disabled: true` until creds. Email+password login only |
+| MMM-Bring (rkorell) | bottom_right | List "Food shop". Hides itself when list empty. Creds Pi-only; email+password login only |
 
 
 ### Pi unreachable, ping works
