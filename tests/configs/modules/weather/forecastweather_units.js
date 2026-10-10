@@ -1,9 +1,6 @@
-/* MagicMirror² Test config default weather
- *
- * By rejas
- * MIT Licensed.
- */
-let config = {
+const config = {
+	address: "0.0.0.0",
+	ipWhitelist: [],
 	units: "imperial",
 
 	modules: [
@@ -12,10 +9,12 @@ let config = {
 			position: "bottom_bar",
 			config: {
 				type: "forecast",
-				location: "Munich",
-				mockData: '"#####WEATHERDATA#####"',
-				weatherEndpoint: "/forecast/daily",
-				decimalSymbol: "_"
+				lat: 48.14,
+				lon: 11.58,
+				weatherProvider: "openweathermap",
+				apiKey: "test-api-key",
+				decimalSymbol: "_",
+				showPrecipitationAmount: true
 			}
 		}
 	]

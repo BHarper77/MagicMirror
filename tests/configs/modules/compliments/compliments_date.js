@@ -1,9 +1,6 @@
-/* MagicMirror² Test config compliments with date type
- *
- * By Rejas
- * MIT Licensed.
- */
-let config = {
+const config = {
+	address: "0.0.0.0",
+	ipWhitelist: [],
 	timeFormat: 12,
 
 	modules: [
@@ -11,7 +8,6 @@ let config = {
 			module: "compliments",
 			position: "middle_center",
 			config: {
-				mockDate: "2020-01-01",
 				compliments: {
 					morning: [],
 					afternoon: [],

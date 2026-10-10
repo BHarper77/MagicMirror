@@ -1,43 +1,36 @@
-// see https://playwright.dev/docs/api/class-electronapplication
+const events = require("node:events");
+const helpers = require("./helpers/global-setup");
 
-const { _electron: electron } = require("playwright");
-
-let electronApp = null;
-process.env.MM_CONFIG_FILE = "tests/configs/modules/display.js";
-jest.retryTimes(3);
-
-describe("Electron app environment", function () {
-	beforeEach(async function () {
-		electronApp = await electron.launch({ args: ["js/electron.js"] });
+describe("Electron app environment", () => {
+	beforeEach(async () => {
+		await helpers.startApplication("tests/configs/modules/display.js");
 	});
 
-	afterEach(async function () {
-		await electronApp.close();
+	afterEach(async () => {
+		await helpers.stopApplication();
 	});
 
-	it("should open browserwindow", async function () {
-		expect(await electronApp.windows().length).toBe(1);
-		const page = await electronApp.firstWindow();
-		expect(await page.title()).toBe("MagicMirror²");
-		expect(await page.isVisible("body")).toBe(true);
-		const module = page.locator("#module_0_helloworld");
-		await module.waitFor();
-		expect(await module.textContent()).toContain("Test Display Header");
+	it("should open browserwindow", async () => {
+		// Wait for module content to be rendered, not just the module wrapper
+		const moduleContent = await helpers.getElement("#module_0_helloworld .module-content");
+		await expect(moduleContent.textContent()).resolves.toContain("Test Display Header");
+		expect(global.electronApp.windows()).toHaveLength(1);
 	});
 });
 
-describe("Development console tests", function () {
-	beforeEach(async function () {
-		electronApp = await electron.launch({ args: ["js/electron.js", "dev"] });
+describe("Development console tests", () => {
+	beforeEach(async () => {
+		await helpers.startApplication("tests/configs/modules/display.js", null, ["dev"]);
 	});
 
-	afterEach(async function () {
-		await electronApp.close();
+	afterEach(async () => {
+		await helpers.stopApplication();
 	});
 
-	it("should open browserwindow and dev console", async function () {
-		const pageArray = await electronApp.windows();
-		expect(pageArray.length).toBe(2);
+	it("should open browserwindow and dev console", async () => {
+		while (global.electronApp.windows().length < 2) await events.once(global.electronApp, "window");
+		const pageArray = await global.electronApp.windows();
+		expect(pageArray).toHaveLength(2);
 		for (const page of pageArray) {
 			expect(["MagicMirror²", "DevTools"]).toContain(await page.title());
 		}

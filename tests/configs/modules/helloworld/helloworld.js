@@ -1,9 +1,6 @@
-/* MagicMirror² Test config sample module hello world
- *
- * By Rodrigo Ramírez Norambuena https://rodrigoramirez.com
- * MIT Licensed.
- */
-let config = {
+const config = {
+	address: "0.0.0.0",
+	ipWhitelist: [],
 	modules: [
 		{
 			module: "helloworld",

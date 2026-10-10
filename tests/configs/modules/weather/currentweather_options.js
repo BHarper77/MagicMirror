@@ -1,20 +1,19 @@
-/* MagicMirror² Test config default weather
- *
- * By fewieden https://github.com/fewieden
- * MIT Licensed.
- */
-let config = {
+const config = {
+	address: "0.0.0.0",
+	ipWhitelist: [],
 	modules: [
 		{
 			module: "weather",
 			position: "bottom_bar",
 			config: {
-				location: "Munich",
-				mockData: '"#####WEATHERDATA#####"',
-				useBeaufort: false,
+				lat: 48.14,
+				lon: 11.58,
+				weatherProvider: "openweathermap",
+				apiKey: "test-api-key",
+				windUnits: "beaufort",
 				showWindDirectionAsArrow: true,
 				showSun: false,
-				showHumidity: true,
+				showHumidity: "wind",
 				roundTemp: true,
 				degreeLabel: true
 			}

@@ -88,6 +88,60 @@ pm2 stop MagicMirror        # pm2 restarts it on boot / on crash — stop, don't
 pkill -f electron           # last resort; pm2 will respawn it unless stopped first
 ```
 
+## MagicMirror versions and upgrades
+
+Current: **MM v2.38.0**, Electron 44.4.5, Node **v24.21.0** (nvm). pm2 runs on
+nvm default v20.9.0. Why, and what changed from 2.21: `docs/adr/0004`.
+
+Use `nvm use 24.21.0` for `npm` in the MM dir or modules, and plain
+`. nvm.sh` (default 20) for `pm2`. Don't use `pm2 restart --update-env`:
+it swaps the ecosystem env for your shell's. Use
+`pm2 delete MagicMirror && pm2 start ecosystem.config.js && pm2 save`.
+
+### Modules: never patch
+
+Third-party modules in `modules/` stay unmodified. To update one:
+
+```sh
+cd ~/Documents/MagicMirror/modules/MMM-Foo
+git pull && npm install --omit=dev    # under node 24
+git status                            # must be clean
+```
+
+Make tweaks in `config/config.js` / `config/custom.css`, or send them upstream.
+If a module only works with a local edit, don't use it.
+
+### Upgrading core
+
+1. Back up: `tar --exclude=node_modules -czf ~/backups/mm-pre-X.tgz -C ~/Documents MagicMirror`
+   (it holds config.js with secret calendar URLs, so keep it on the Pi).
+2. On the dev machine, merge upstream on a branch:
+   `git fetch upstream tag vX.Y.Z --no-tags && git merge vX.Y.Z`. Check release notes
+   for node `engines` and breaking config changes. Push the branch.
+3. On the Pi: `pm2 stop MagicMirror`, `git fetch origin <branch> && git merge --ff-only FETCH_HEAD`,
+   `nvm install <node>` if `engines` changed (then update `NODE_BIN` in
+   `ecosystem.config.js`), `rm -rf node_modules && npm run install-mm`,
+   `node --run config:check`.
+4. Restart (delete/start/save as above), wait ~90s, check
+   `pm2 list` (↺ 0), `~/.pm2/logs/magicmirror-*.log`, and a screenshot:
+   `XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 grim /tmp/m.png`.
+5. Merge the branch to master and push.
+
+### Rollback (2.38 → 2.21)
+
+Pre-upgrade copies on the Pi: `~/backups/MagicMirror-2.21-full` (complete dir
+incl. node_modules) and `~/backups/mm-pre-2.38-20261010.tgz` (no node_modules,
+includes MMM-NBA and the pm2 dump).
+
+```sh
+pm2 stop MagicMirror
+mv ~/Documents/MagicMirror ~/Documents/MagicMirror-2.38
+cp -a ~/backups/MagicMirror-2.21-full ~/Documents/MagicMirror
+cd ~/Documents/MagicMirror && pm2 delete MagicMirror && pm2 start ecosystem.config.js && pm2 save
+```
+
+The 2.21 `ecosystem.config.js` in that copy points at node v20.9.0, which is still installed.
+
 ## WiFi
 
 Two profiles on `wlan0`: `Hyperoptic Fibre 2B43` (autoconnect priority **10**)
@@ -162,7 +216,8 @@ the hotspot is out of range or switched off the Pi rejoins home by itself.
 | Tailscale never comes up off-site | It needs its control plane to establish; no mobile data means no tailnet. Fall back to the hotspot-assigned LAN IP from the phone's client list. |
 
 Benign stderr noise from MagicMirror on the Pi — `gbm_wrapper … dma_buf`,
-`GetVSyncParametersIfAvailable` — is normal Electron/GL warning, not failure.
+`GetVSyncParametersIfAvailable`, `Xlib: extension "DRI2" missing`,
+`vaInitialize failed` — is normal Electron/GL warning, not failure.
 
 ## Unused hardware
 
