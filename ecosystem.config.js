@@ -16,16 +16,17 @@ module.exports = {
 			// Run electron's CLI launcher under node explicitly (node -> electron
 			// cli.js -> electron binary). Avoids relying on the `#!/usr/bin/env node`
 			// shebang finding nvm's node, which isn't on PATH at boot.
-			// Args mirror upstream `npm run start:wayland` (the default since MM 2.35).
+			// Args mirror upstream `npm run start:x11` (runs via XWayland). Native
+			// Wayland (`start:wayland`, upstream default since 2.35) starts but the
+			// window never appears under wayfire — see docs/adr/0004.
 			script: "node_modules/.bin/electron",
-			args: "js/electron.js --ozone-platform=wayland",
+			args: "js/electron.js",
 			interpreter: `${NODE_BIN}/node`,
 			env: {
-				// MagicMirror is an Electron GUI drawing to the Pi's Wayland (wayfire)
-				// session. Set explicitly so it works when systemd launches PM2 at boot.
-				XDG_RUNTIME_DIR: "/run/user/1000",
-				WAYLAND_DISPLAY: "wayland-1",
-				DISPLAY: ":0", // XWayland fallback, harmless under Wayland
+				// MagicMirror is an Electron GUI: it must draw to the Pi's physical
+				// screen (XWayland :0). Set explicitly so it works when systemd launches
+				// PM2 at boot. Do NOT set WAYLAND_DISPLAY: Electron 44 would pick Wayland.
+				DISPLAY: ":0",
 				// Put nvm's node/npm first so any child process finds them at boot.
 				PATH: `${NODE_BIN}:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin`
 			},
