@@ -13,9 +13,12 @@ ssh admin@raspberrypi          # normal case
 ssh admin@100.84.111.98        # if the hostname hangs (Tailscale MagicDNS is flaky)
 ```
 
-Key-based auth, no password; `admin` has passwordless sudo. If the tailnet IP
-gives *"Host key verification failed"*, add `-o HostKeyAlias=raspberrypi` —
-`known_hosts` only carries the hostname's key.
+Key-based auth, no password; `admin` has passwordless sudo. If you get
+*"Host key verification failed"*: `HostKeyAlias=raspberrypi` only helps if the
+alias's key type matches. As of 2026-10-16 `known_hosts` holds an ECDSA key but
+the Pi presents ed25519. Over the tailnet (WireGuard-authenticated) it is safe
+to accept the key: `ssh -o StrictHostKeyChecking=accept-new admin@100.84.111.98`
+(or use a throwaway `-o UserKnownHostsFile=...`).
 
 Node is under **nvm** and login shells don't load it — source it before any
 `node`/`pm2` command over SSH:
@@ -174,6 +177,25 @@ nmcli -t -f NAME,AUTOCONNECT,AUTOCONNECT-PRIORITY con show   # what's saved
 nmcli -t -f DEVICE,STATE,CONNECTION dev status | grep wlan0  # what's active
 sudo nmcli dev wifi rescan; nmcli dev wifi list              # what's in range
 ```
+
+### Mirror offline, power cycle fixes it
+
+Seen 2026-10-14 (~46h): `wlan0` stayed "connected" but passed no traffic; see
+`docs/adr/0005`. WiFi power save is now forced off
+(`/etc/NetworkManager/conf.d/wifi-powersave.conf`, plus `802-11-wireless.powersave 2`
+on both profiles). After the power cycle, check the previous boot:
+
+```sh
+journalctl -k -b -1 | grep -iE 'brcmf|mmc|blocked for'
+journalctl -u NetworkManager -u wpa_supplicant -b -1 | tail -50
+journalctl -b -1 -u tailscaled | grep -c 'dns udp query: waiting'   # outage onset/size
+sudo dmesg | grep 'power save'                                      # expect "disabled"
+vcgencmd get_throttled                                              # 0x0 = no undervoltage
+```
+
+Last log line being a silent DHCP `no lease` with no link events means the same
+stall. If it recurs with power save off, build the gateway-ping watchdog
+described in the ADR.
 
 ### Working off-site (shed)
 
