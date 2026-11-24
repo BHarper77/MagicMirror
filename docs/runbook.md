@@ -171,9 +171,8 @@ hand. Symbols come from finance.yahoo.com search (LSE = `.L`). Install with
 	module: "MMM-Jast",
 	position: "bottom_bar", // below newsfeed (config order)
 	config: {
-		displayMode: "horizontal",
-		fadeSpeedInSeconds: 60, // seconds per full scroll loop in horizontal mode
-		virtualHorizontalMultiplier: 3, // repeat list so it fills the width
+		displayMode: "horizontal-static", // custom.css pans it if too wide
+		locale: "en-US", // "$" rather than "US$"
 		updateIntervalInSeconds: 600,
 		currencyStyle: "symbol",
 		maxChangeAge: 0, // keep last change on weekends
@@ -185,18 +184,32 @@ hand. Symbols come from finance.yahoo.com search (LSE = `.L`). Install with
 },
 ```
 
-`custom.css` (the module's own CSS gives the ticker 0 height and overflows):
+`custom.css`:
 
 ```css
-.MMM-Jast .jast-wrapper.horizontal { position: relative; height: calc(var(--size) * 1.44); }
 /* brighter up/down colours so they transmit through the glass */
 .MMM-Jast .jast-wrapper:not(.monochrome) .jast-stock span.high { color: #4cd964; }
 .MMM-Jast .jast-wrapper:not(.monochrome) .jast-stock span.low { color: #ff5c5c; }
 /* slightly smaller than the module default (1.4rem) */
 .MMM-Jast .jast-wrapper { --size: 1.15rem; }
+/* Ticker: one centred line; pans back and forth only if wider than the mirror */
+.MMM-Jast .jast-wrapper.horizontal-static { container-type: inline-size; }
+.MMM-Jast .jast-wrapper.horizontal-static ul.jast-static-horizontal-list {
+    flex-wrap: nowrap;
+    justify-content: center;
+    width: max-content;
+    min-width: 100%;
+    animation: jast-pan 20s ease-in-out infinite alternate;
+}
+@keyframes jast-pan {
+    0%, 10% { transform: translateX(0); }
+    90%, 100% { transform: translateX(min(0px, calc(100cqw - 100%))); }
+}
 ```
 
-More tickers make the loop longer: raise `fadeSpeedInSeconds` in proportion.
+Pan takes 20s each way whatever the length: raise `jast-pan`'s duration for long
+lists. The module's own `horizontal` mode always scrolls, and used more CPU (82%
+idle vs 94% static).
 
 ### Newsfeed height
 
