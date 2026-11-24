@@ -158,13 +158,63 @@ nvm on PATH: use `~/.nvm/versions/node/v24.21.0/bin/node` and
 | compliments | lower_third | Birthdays only (blank otherwise). Messages in `config/compliments.json` (served as `/config/...`, reloaded hourly, no restart). Date keys are regex on `YYYY-MM-DD`, e.g. `"....-03-14"` |
 | MMM-MyScoreboard | top_right (under weather) | NBA, all games (no `teams`). `maxHeight: 220` scrolls overflow |
 | MMM-Bring (rkorell) | top_left (under clock) | List "Food shop", `customTitle` header. Tiles restyled to 1-col text list in `custom.css`. Hides itself when list empty. Creds Pi-only; email+password login only |
+| MMM-Jast (jalibu) | bottom_bar (below newsfeed) | Stock ticker: ANT, TTWO. Yahoo Finance (unofficial, no key). Config + CSS below |
 
+### Stock ticker (MMM-Jast)
+
+Trading 212's API has no watchlist or quote endpoint, so tickers are listed by
+hand. Symbols come from finance.yahoo.com search (LSE = `.L`). Install with
+`npm ci --omit=dev --ignore-scripts` under node 24.
+
+```js
+{
+	module: "MMM-Jast",
+	position: "bottom_bar", // below newsfeed (config order)
+	config: {
+		displayMode: "horizontal",
+		fadeSpeedInSeconds: 60, // seconds per full scroll loop in horizontal mode
+		virtualHorizontalMultiplier: 3, // repeat list so it fills the width
+		updateIntervalInSeconds: 600,
+		currencyStyle: "symbol",
+		maxChangeAge: 0, // keep last change on weekends
+		stocks: [
+			{ name: "Anthropic", symbol: "ANT" },
+			{ name: "Take-Two", symbol: "TTWO" },
+		],
+	}
+},
+```
+
+`custom.css` (the module's own CSS gives the ticker 0 height and overflows):
+
+```css
+.MMM-Jast .jast-wrapper.horizontal { position: relative; height: calc(var(--size) * 1.44); }
+/* brighter up/down colours so they transmit through the glass */
+.MMM-Jast .jast-wrapper:not(.monochrome) .jast-stock span.high { color: #4cd964; }
+.MMM-Jast .jast-wrapper:not(.monochrome) .jast-stock span.low { color: #ff5c5c; }
+```
+
+More tickers make the loop longer: raise `fadeSpeedInSeconds` in proportion.
 
 ### Pi unreachable, ping works
 
 SSH times out at banner exchange. Seen 2026-10-10: `journalctl -k -b -1` showed
 `kworker ... blocked for more than 120 seconds` in `mmc_rescan`, i.e. SD card I/O
 stall (not OOM). Power-cycle. If it recurs, replace the SD card.
+
+Recurred 2026-11-24 with the same `mmc_rescan` trace, but memory was the likely
+driver: `pcmanfm` at 2.6GB RSS, swap (100MB) full, ~33MB/s of SD reads. No I/O
+errors, no OOM kill, `throttled=0x0`. Ping and TCP accept still work because the
+kernel handles them; sshd, tailscaled and MM don't respond. Before any
+`npm`/`pm2` work on the Pi, check:
+
+```sh
+free -m; ps aux --sort=-rss | head -4; vmstat 2 3   # low available + high bi = thrashing
+pkill -x pcmanfm                                    # wayfire respawns it
+```
+
+Cause of the `pcmanfm` growth is unknown. It is the desktop wallpaper process,
+started by wayfire (`wfrespawn`), and not needed behind a fullscreen MM.
 
 ## WiFi
 
