@@ -192,9 +192,30 @@ hand. Symbols come from finance.yahoo.com search (LSE = `.L`). Install with
 /* brighter up/down colours so they transmit through the glass */
 .MMM-Jast .jast-wrapper:not(.monochrome) .jast-stock span.high { color: #4cd964; }
 .MMM-Jast .jast-wrapper:not(.monochrome) .jast-stock span.low { color: #ff5c5c; }
+/* slightly smaller than the module default (1.4rem) */
+.MMM-Jast .jast-wrapper { --size: 1.15rem; }
 ```
 
 More tickers make the loop longer: raise `fadeSpeedInSeconds` in proportion.
+
+### Newsfeed height
+
+Headlines rotate and wrap to different line counts. `custom.css` fixes the height
+so the calendar above doesn't move:
+
+```css
+.newsfeed .module-content { height: 5rem; overflow: hidden; }
+.newsfeed .newsfeed-title,
+.newsfeed .newsfeed-desc {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+}
+```
+
+5rem fits source + 1-line title + 2-line description. A 2-line title leaves room
+for 1 description line.
 
 ### Pi unreachable, ping works
 
@@ -210,11 +231,19 @@ kernel handles them; sshd, tailscaled and MM don't respond. Before any
 
 ```sh
 free -m; ps aux --sort=-rss | head -4; vmstat 2 3   # low available + high bi = thrashing
-pkill -x pcmanfm                                    # wayfire respawns it
 ```
 
-Cause of the `pcmanfm` growth is unknown. It is the desktop wallpaper process,
-started by wayfire (`wfrespawn`), and not needed behind a fullscreen MM.
+Cause of the `pcmanfm` growth is unknown. It is the desktop wallpaper process, not
+needed behind a fullscreen MM, so its autostart is overridden in
+`~/.config/wayfire.ini` (verified across a reboot):
+
+```ini
+[autostart-static]
+autostart1 = true
+```
+
+This overrides `autostart1` in `/etc/wayfire/defaults.ini` by name. If an OS update
+renumbers that list, pcmanfm may return (`pgrep -ax pcmanfm`).
 
 ## WiFi
 
